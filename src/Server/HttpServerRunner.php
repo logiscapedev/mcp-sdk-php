@@ -32,6 +32,7 @@ use Mcp\Server\Transport\Http\Environment;
 use Mcp\Server\Transport\Http\SessionStoreInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Mcp\Server\Auth\AuthorizationConfig;
 
 /**
  * Runner for HTTP-based MCP servers.
@@ -54,6 +55,13 @@ class HttpServerRunner extends ServerRunner
      * @var ServerSession|null
      */
     private ?ServerSession $serverSession = null;
+
+    /**
+     * Authorization configuration.
+     *
+     * @var AuthorizationConfig|null
+     */
+    private ?AuthorizationConfig $authConfig = null;
     
     /**
      * Constructor.
@@ -63,16 +71,25 @@ class HttpServerRunner extends ServerRunner
      * @param array $httpOptions HTTP transport options
      * @param LoggerInterface|null $logger Logger
      * @param SessionStoreInterface|null $sessionStore Session store
+     * @param AuthorizationConfig|null $authConfig Authorization configuration
      */
     public function __construct(
         private readonly Server $server,
         private readonly InitializationOptions $initOptions,
         array $httpOptions = [],
         ?LoggerInterface $logger = null,
-        ?SessionStoreInterface $sessionStore = null
+        ?SessionStoreInterface $sessionStore = null,
+        ?AuthorizationConfig $authConfig = null
     ) {
         // Create HTTP transport
         $this->transport = new HttpServerTransport($httpOptions, $sessionStore);
+
+        // Set authorization config on transport if provided
+        $this->authConfig = $authConfig;
+        if ($authConfig !== null && $authConfig->isEnabled()) {
+            $this->transport->setAuthorizationConfig($authConfig);
+            $this->logger?->info('OAuth authorization enabled for HTTP transport');
+        }
         
         parent::__construct($server, $initOptions, $logger ?? new NullLogger());
     }
@@ -117,6 +134,13 @@ class HttpServerRunner extends ServerRunner
             $this->server->setSession($this->serverSession);
             $this->serverSession->registerHandlers($this->server->getHandlers());
             $this->serverSession->registerNotificationHandlers($this->server->getNotificationHandlers());
+
+            // Pass OAuth token metadata to session if available
+            $oauthToken = $httpSession->getMetadata('oauth_token');
+            if ($oauthToken !== null && is_array($oauthToken)) {
+                // Store in server session for use by handlers
+                $this->serverSession->setOAuthToken($oauthToken);
+            }
 
             // 4) Now run the session to process whatever got enqueued
             if (!$this->serverSession->isInitialized()) {

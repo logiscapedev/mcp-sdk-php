@@ -49,6 +49,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use RuntimeException;
 use InvalidArgumentException;
+use Mcp\Server\Auth\AuthorizationConfig;
 
 /**
  * MCP Server implementation
@@ -63,6 +64,8 @@ class Server {
     private array $notificationHandlers = [];
     private ?ServerSession $session = null;
     private LoggerInterface $logger;
+    /** @var AuthorizationConfig|null */
+    private ?AuthorizationConfig $authConfig = null;
 
     public function __construct(
         private readonly string $name,
@@ -87,6 +90,16 @@ class Server {
     ): InitializationOptions {
         $notificationOptions ??= new NotificationOptions();
         $experimentalCapabilities ??= [];
+
+        // Add OAuth info to experimental capabilities if enabled
+        if ($this->isAuthorizationEnabled() && $this->authConfig !== null) {
+            $experimentalCapabilities['oauth2'] = [
+                'enabled' => true,
+                'issuer' => $this->authConfig->getIssuer(),
+                'grant_types' => $this->authConfig->getGrantTypes(),
+                'dynamic_registration' => $this->authConfig->isDynamicRegistrationEnabled()
+            ];
+        }
 
         return new InitializationOptions(
             serverName: $this->name,
@@ -335,4 +348,140 @@ class Server {
         
         return $this->session->clientSupportsFeature($feature);
     }
+
+    /**
+     * Enable OAuth authorization for this server.
+     *
+     * @param array|AuthorizationConfig $config Authorization configuration
+     * @return void
+     * @throws \InvalidArgumentException If configuration is invalid
+     */
+    public function enableAuthorization($config): void
+    {
+        if (is_array($config)) {
+            $this->authConfig = new AuthorizationConfig($config);
+        } elseif ($config instanceof AuthorizationConfig) {
+            $this->authConfig = $config;
+        } else {
+            throw new \InvalidArgumentException('Authorization config must be an array or AuthorizationConfig instance');
+        }
+
+        // Validate configuration
+        $errors = $this->authConfig->validate();
+        if (!empty($errors)) {
+            throw new \InvalidArgumentException('Invalid authorization config: ' . implode(', ', $errors));
+        }
+
+        // If issuer is not set, try to determine it from the environment
+        if (empty($this->authConfig->getIssuer())) {
+            $issuer = $this->determineIssuer();
+            if ($issuer !== null) {
+                $this->authConfig->setIssuer($issuer);
+            }
+        }
+
+        $this->logger->info('OAuth authorization enabled for server');
+    }
+
+    /**
+     * Get the authorization configuration.
+     *
+     * @return AuthorizationConfig|null
+     */
+    public function getAuthorizationConfig(): ?AuthorizationConfig
+    {
+        return $this->authConfig;
+    }
+
+    /**
+     * Check if authorization is enabled.
+     *
+     * @return bool
+     */
+    public function isAuthorizationEnabled(): bool
+    {
+        return $this->authConfig !== null && $this->authConfig->isEnabled();
+    }
+
+    /**
+     * Set public endpoints that don't require authorization.
+     *
+     * @param array<string> $endpoints Array of endpoint paths
+     * @return void
+     * @throws \RuntimeException If authorization is not enabled
+     */
+    public function setPublicEndpoints(array $endpoints): void
+    {
+        if ($this->authConfig === null) {
+            throw new \RuntimeException('Authorization must be enabled before setting public endpoints');
+        }
+
+        foreach ($endpoints as $endpoint) {
+            $this->authConfig->addPublicEndpoint($endpoint);
+        }
+
+        $this->logger->debug('Set public endpoints: ' . implode(', ', $endpoints));
+    }
+
+    /**
+     * Add a single public endpoint.
+     *
+     * @param string $endpoint Endpoint path
+     * @return void
+     * @throws \RuntimeException If authorization is not enabled
+     */
+    public function addPublicEndpoint(string $endpoint): void
+    {
+        if ($this->authConfig === null) {
+            throw new \RuntimeException('Authorization must be enabled before adding public endpoints');
+        }
+
+        $this->authConfig->addPublicEndpoint($endpoint);
+        $this->logger->debug("Added public endpoint: {$endpoint}");
+    }
+
+    /**
+     * Check if an endpoint requires authorization.
+     *
+     * @param string $endpoint Endpoint path
+     * @return bool
+     */
+    public function isEndpointProtected(string $endpoint): bool
+    {
+        if ($this->authConfig === null) {
+            return false;
+        }
+
+        return $this->authConfig->isEndpointProtected($endpoint);
+    }
+
+    /**
+     * Try to determine the issuer URL from the environment.
+     *
+     * @return string|null Issuer URL or null if cannot be determined
+     */
+    private function determineIssuer(): ?string
+    {
+        // Try to get from environment variable
+        $issuer = getenv('MCP_OAUTH_ISSUER');
+        if ($issuer !== false && !empty($issuer)) {
+            return $issuer;
+        }
+
+        // Try to construct from server variables
+        if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+            $scheme = 'https';
+        } else {
+            $scheme = 'http';
+        }
+
+        $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? null;
+        if ($host === null) {
+            return null;
+        }
+
+        // Remove any path components - issuer should be the base URL
+        return "{$scheme}://{$host}";
+    }
+
 }

@@ -43,6 +43,11 @@ use Mcp\Server\Transport\Http\HttpSession;
 use Mcp\Server\Transport\Http\InMemorySessionStore;
 use Mcp\Server\Transport\Http\MessageQueue;
 use Mcp\Server\Transport\Http\SessionStoreInterface;
+use Mcp\Server\Auth\AuthorizationConfig;
+use Mcp\Server\Auth\AuthorizationMiddleware;
+use Mcp\Server\Auth\OAuthServer;
+use Mcp\Server\Auth\ClientRegistrar;
+use Mcp\Server\Auth\TokenManager;
 
 /**
  * HTTP transport implementation for MCP server.
@@ -114,6 +119,34 @@ class HttpServerTransport implements Transport
      * @var HttpSession|null
      */
     private ?HttpSession $lastUsedSession = null;
+
+    /**
+     * Authorization configuration.
+     *
+     * @var AuthorizationConfig|null
+     */
+    private ?AuthorizationConfig $authConfig = null;
+    
+    /**
+     * Authorization middleware.
+     *
+     * @var AuthorizationMiddleware|null
+     */
+    private ?AuthorizationMiddleware $authMiddleware = null;
+    
+    /**
+     * OAuth server.
+     *
+     * @var OAuthServer|null
+     */
+    private ?OAuthServer $oauthServer = null;
+    
+    /**
+     * Client registrar.
+     *
+     * @var ClientRegistrar|null
+     */
+    private ?ClientRegistrar $clientRegistrar = null;
     
     /**
      * Constructor.
@@ -231,6 +264,27 @@ class HttpServerTransport implements Transport
      */
     public function handleRequest(HttpMessage $request): HttpMessage
     {
+        // Extract the path from the request
+        $path = $this->extractPath($request);
+
+        // Check if this is an OAuth endpoint
+        if ($this->isOAuthEndpoint($path)) {
+            return $this->handleOAuthRequest($request, $path);
+        }
+
+        // Check authorization for non-OAuth endpoints
+        if ($this->authConfig !== null && $this->authConfig->isEnabled() && $this->authMiddleware !== null) {
+            $authResult = $this->authMiddleware->checkAuthorization($request, $path);
+            
+            if (!$authResult['authorized']) {
+                // Return 401 Unauthorized
+                return $this->authMiddleware->createUnauthorizedResponse(
+                    $authResult['error'],
+                    $authResult['error_code']
+                );
+            }
+        }
+
         // Extract session ID from request headers
         $sessionId = $request->getHeader('Mcp-Session-Id');
         $session = null;
@@ -271,6 +325,15 @@ class HttpServerTransport implements Transport
 
         // Set last used session
         $this->lastUsedSession = $session;
+
+        // Store OAuth token metadata in session if available
+        if ($this->authConfig !== null && 
+            $this->authConfig->isEnabled() && 
+            $this->authMiddleware !== null &&
+            isset($authResult) && 
+            $authResult['token_metadata'] !== null) {
+            $session->setMetadata('oauth_token', $authResult['token_metadata']);
+        }
         
         // Process request based on HTTP method
         $response = match (strtoupper($request->getMethod())) {
@@ -914,6 +977,179 @@ class HttpServerTransport implements Transport
     public function isStarted(): bool
     {
         return $this->isStarted;
+    }
+
+    /**
+     * Set authorization configuration.
+     *
+     * @param AuthorizationConfig $config Authorization configuration
+     * @return void
+     */
+    public function setAuthorizationConfig(AuthorizationConfig $config): void
+    {
+        $this->authConfig = $config;
+        
+        if ($config->isEnabled()) {
+            // Initialize OAuth components
+            $this->oauthServer = new OAuthServer($config);
+            $this->authMiddleware = new AuthorizationMiddleware(
+                $config,
+                $this->oauthServer->getTokenManager()
+            );
+            $this->clientRegistrar = new ClientRegistrar($config);
+        }
+    }
+
+    /**
+     * Handle OAuth-specific requests.
+     *
+     * @param HttpMessage $request Request message
+     * @param string $path Request path
+     * @return HttpMessage Response message
+     */
+    private function handleOAuthRequest(HttpMessage $request, string $path): HttpMessage
+    {
+        if ($this->oauthServer === null) {
+            return HttpMessage::createJsonResponse(['error' => 'OAuth not configured'], 500);
+        }
+        
+        switch ($path) {
+            case '/.well-known/oauth-authorization-server':
+                return $this->oauthServer->handleMetadataRequest($request);
+                
+            case '/authorize':
+                return $this->oauthServer->handleAuthorizeRequest($request);
+                
+            case '/token':
+                return $this->oauthServer->handleTokenRequest($request);
+                
+            case '/register':
+                if ($this->clientRegistrar === null) {
+                    return HttpMessage::createJsonResponse(['error' => 'Registration not enabled'], 404);
+                }
+                return $this->clientRegistrar->handleRegistrationRequest($request);
+                
+            case '/revoke':
+                return $this->handleRevokeRequest($request);
+                
+            case '/introspect':
+                return $this->handleIntrospectRequest($request);
+                
+            default:
+                // Check if it's a client-specific registration endpoint
+                if (preg_match('#^/register/(.+)$#', $path, $matches)) {
+                    $clientId = $matches[1];
+                    if ($this->clientRegistrar === null) {
+                        return HttpMessage::createJsonResponse(['error' => 'Registration not enabled'], 404);
+                    }
+                    return $this->clientRegistrar->handleUpdateRequest($request, $clientId);
+                }
+                
+                return HttpMessage::createJsonResponse(['error' => 'Not found'], 404);
+        }
+    }
+
+    /**
+     * Handle token revocation request.
+     *
+     * @param HttpMessage $request Request message
+     * @return HttpMessage Response message
+     */
+    private function handleRevokeRequest(HttpMessage $request): HttpMessage
+    {
+        if ($request->getMethod() !== 'POST') {
+            return HttpMessage::createJsonResponse(['error' => 'invalid_request'], 405);
+        }
+        
+        // Parse request body
+        $body = $request->getBody();
+        if ($body === null) {
+            return HttpMessage::createJsonResponse(['error' => 'invalid_request'], 400);
+        }
+        
+        parse_str($body, $params);
+        $token = $params['token'] ?? null;
+        $tokenTypeHint = $params['token_type_hint'] ?? 'access_token';
+        
+        if (!$token) {
+            return HttpMessage::createJsonResponse(['error' => 'invalid_request'], 400);
+        }
+        
+        // Revoke the token
+        if ($this->oauthServer !== null) {
+            $tokenManager = $this->oauthServer->getTokenManager();
+            $tokenManager->revokeToken($token, $tokenTypeHint);
+        }
+        
+        // Always return 200 OK per RFC7009
+        return HttpMessage::createEmptyResponse(200);
+    }
+
+    /**
+     * Handle token introspection request.
+     *
+     * @param HttpMessage $request Request message
+     * @return HttpMessage Response message
+     */
+    private function handleIntrospectRequest(HttpMessage $request): HttpMessage
+    {
+        if ($request->getMethod() !== 'POST') {
+            return HttpMessage::createJsonResponse(['error' => 'invalid_request'], 405);
+        }
+        
+        // This would require client authentication
+        // For now, return a basic implementation
+        return HttpMessage::createJsonResponse([
+            'error' => 'not_implemented',
+            'error_description' => 'Token introspection not yet implemented'
+        ], 501);
+    }
+
+    /**
+     * Extract path from request.
+     *
+     * @param HttpMessage $request Request message
+     * @return string Path
+     */
+    private function extractPath(HttpMessage $request): string
+    {
+        $uri = $request->getUri();
+        if ($uri === null) {
+            return '/';
+        }
+        
+        $parsed = parse_url($uri);
+        return $parsed['path'] ?? '/';
+    }
+
+    /**
+     * Check if a path is an OAuth endpoint.
+     *
+     * @param string $path Request path
+     * @return bool True if OAuth endpoint
+     */
+    private function isOAuthEndpoint(string $path): bool
+    {
+        $oauthPaths = [
+            '/.well-known/oauth-authorization-server',
+            '/authorize',
+            '/token',
+            '/register',
+            '/revoke',
+            '/introspect'
+        ];
+        
+        // Check exact matches
+        if (in_array($path, $oauthPaths, true)) {
+            return true;
+        }
+        
+        // Check pattern matches (e.g., /register/{client_id})
+        if (preg_match('#^/register/.+$#', $path)) {
+            return true;
+        }
+        
+        return false;
     }
 
 }
