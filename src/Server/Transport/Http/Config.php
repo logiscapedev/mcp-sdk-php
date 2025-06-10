@@ -51,6 +51,7 @@ class Config
         'server_header' => 'MCP-PHP-Server/1.0', // Server identification
         'auth_enabled' => false,          // OAuth disabled by default
         'authorization_servers' => [],    // Authorization server metadata
+        'resource' => null,               // Protected resource identifier
         'resource_metadata_path' => '/.well-known/oauth-protected-resource',
         'token_validator' => null,        // Instance of TokenValidatorInterface
     ];
@@ -122,6 +123,15 @@ class Config
     {
         $servers = $this->options['authorization_servers'] ?? [];
         return is_array($servers) ? $servers : [];
+    }
+
+    /**
+     * Get the identifier for this protected resource.
+     */
+    public function getResource(): ?string
+    {
+        $resource = $this->options['resource'] ?? null;
+        return $resource !== null ? (string)$resource : null;
     }
 
     /**

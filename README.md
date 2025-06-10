@@ -228,11 +228,14 @@ The HTTP server transport includes optional OAuth 2.1 support. Enable it by pass
 $transport = new HttpServerTransport([
     'auth_enabled' => true,
     'authorization_servers' => ['https://auth.example.com'],
+    'resource' => 'https://example.com/api',
     'token_validator' => new Mcp\Server\Auth\JwtTokenValidator('shared-secret')
 ]);
 ```
 
 When enabled, requests must include a `Bearer` access token in the `Authorization` header. Invalid or missing tokens receive a `401` response with a `WWW-Authenticate` header pointing to `/.well-known/oauth-protected-resource`.
+The metadata at this path describes the protected resource using the `resource` and `authorization_servers` options.
+Clients can retrieve it with a simple `GET` request to the path configured by `resource_metadata_path`.
 
 ## Documentation
 
