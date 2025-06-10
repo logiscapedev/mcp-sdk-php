@@ -284,30 +284,6 @@ class HttpServerTransport implements Transport
         // Set last used session
         $this->lastUsedSession = $session;
 
-        // Authorization handling
-        if ($this->config->isAuthEnabled()) {
-            $authHeader = $request->getHeader('Authorization');
-            if ($authHeader === null || !preg_match('/^Bearer\s+(\S+)/i', $authHeader, $m)) {
-                return HttpMessage::createEmptyResponse(401)
-                    ->setHeader('WWW-Authenticate', 'Bearer resource="' . $this->config->getResourceMetadataPath() . '"');
-            }
-
-            if ($this->validator === null) {
-                return HttpMessage::createJsonResponse(['error' => 'No token validator configured'], 500);
-            }
-
-            $result = $this->validator->validate($m[1]);
-            if (!$result->valid) {
-                return HttpMessage::createEmptyResponse(401)
-                    ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource="' . $this->config->getResourceMetadataPath() . '"');
-            }
-
-            if (!isset($result->claims['scope']) || strpos((string)$result->claims['scope'], 'mcp') === false) {
-                return HttpMessage::createEmptyResponse(403);
-            }
-
-            $session->setMetadata('token_claims', $result->claims);
-        }
         
         // Process request based on HTTP method
         $response = match (strtoupper($request->getMethod())) {
@@ -337,9 +313,8 @@ class HttpServerTransport implements Transport
      */
     private function handlePostRequest(HttpMessage $request, HttpSession $session): HttpMessage
     {
-        if ($this->config->isAuthEnabled() && $session->getMetadata('token_claims') === null) {
-            return HttpMessage::createEmptyResponse(401)
-                ->setHeader('WWW-Authenticate', 'Bearer resource="' . $this->config->getResourceMetadataPath() . '"');
+        if ($auth = $this->authorizeRequest($request, $session)) {
+            return $auth;
         }
         // Get and validate content type
         $contentType = $request->getHeader('Content-Type');
@@ -417,6 +392,9 @@ class HttpServerTransport implements Transport
      */
     private function handleGetRequest(HttpMessage $request, HttpSession $session): HttpMessage
     {
+        if ($auth = $this->authorizeRequest($request, $session)) {
+            return $auth;
+        }
         $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
         if ($path === $this->config->getResourceMetadataPath()) {
             return HttpMessage::createJsonResponse($this->getProtectedResourceMetadata());
@@ -453,6 +431,9 @@ class HttpServerTransport implements Transport
      */
     private function handleDeleteRequest(HttpMessage $request, HttpSession $session): HttpMessage
     {
+        if ($auth = $this->authorizeRequest($request, $session)) {
+            return $auth;
+        }
         // Expire the session
         $session->expire();
         
@@ -862,6 +843,42 @@ class HttpServerTransport implements Transport
     public function saveSession(HttpSession $session): void
     {
         $this->sessionStore->save($session);
+    }
+
+    /**
+     * Perform OAuth authorization for the given request if enabled.
+     *
+     * @return HttpMessage|null A response on failure or null on success.
+     */
+    private function authorizeRequest(HttpMessage $request, HttpSession $session): ?HttpMessage
+    {
+        if (!$this->config->isAuthEnabled()) {
+            return null;
+        }
+
+        $authHeader = $request->getHeader('Authorization');
+        if ($authHeader === null || !preg_match('/^Bearer\s+(\S+)/i', $authHeader, $m)) {
+            return HttpMessage::createEmptyResponse(401)
+                ->setHeader('WWW-Authenticate', 'Bearer resource="' . $this->config->getResourceMetadataPath() . '"');
+        }
+
+        $validator = $this->validator ?? $this->config->getTokenValidator();
+        if ($validator === null) {
+            return HttpMessage::createJsonResponse(['error' => 'No token validator configured'], 500);
+        }
+
+        $result = $validator->validate($m[1]);
+        if (!$result->valid) {
+            return HttpMessage::createEmptyResponse(401)
+                ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource="' . $this->config->getResourceMetadataPath() . '"');
+        }
+
+        if (!isset($result->claims['scope']) || strpos((string)$result->claims['scope'], 'mcp') === false) {
+            return HttpMessage::createEmptyResponse(403);
+        }
+
+        $session->setMetadata('oauth_claims', $result->claims);
+        return null;
     }
 
     /**
