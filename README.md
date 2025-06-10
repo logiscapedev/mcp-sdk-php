@@ -220,6 +220,20 @@ This MCP Web Client is intended for developers to test MCP servers, and it is no
 
 While MCP is usually implemented as a stateful session protocol, a typical PHP-based web hosting environment restricts long-running processes. To maximize compatibility, the MCP Web Client will initialize a new connection between the client and server for every request, and then close that connection after the request is complete.
 
+## OAuth Authorization
+
+The HTTP server transport includes optional OAuth 2.1 support. Enable it by passing the following options when constructing `HttpServerTransport`:
+
+```php
+$transport = new HttpServerTransport([
+    'auth_enabled' => true,
+    'authorization_servers' => ['https://auth.example.com'],
+    'token_validator' => new Mcp\Server\Auth\JwtTokenValidator('shared-secret')
+]);
+```
+
+When enabled, requests must include a `Bearer` access token in the `Authorization` header. Invalid or missing tokens receive a `401` response with a `WWW-Authenticate` header pointing to `/.well-known/oauth-protected-resource`.
+
 ## Documentation
 
 For detailed information about the Model Context Protocol, visit the [official documentation](https://modelcontextprotocol.io).

@@ -49,6 +49,10 @@ class Config
         'host' => 'localhost',         // Server host for CLI mode
         'port' => 8080,                // Server port for CLI mode
         'server_header' => 'MCP-PHP-Server/1.0', // Server identification
+        'auth_enabled' => false,          // OAuth disabled by default
+        'authorization_servers' => [],    // Authorization server metadata
+        'resource_metadata_path' => '/.well-known/oauth-protected-resource',
+        'token_validator' => null,        // Instance of TokenValidatorInterface
     ];
     
     /**
@@ -99,6 +103,41 @@ class Config
     public function all(): array
     {
         return $this->options;
+    }
+
+    /**
+     * Check if OAuth authorization is enabled.
+     */
+    public function isAuthEnabled(): bool
+    {
+        return (bool)($this->options['auth_enabled'] ?? false);
+    }
+
+    /**
+     * Get configured authorization servers.
+     *
+     * @return array<int, string>
+     */
+    public function getAuthorizationServers(): array
+    {
+        $servers = $this->options['authorization_servers'] ?? [];
+        return is_array($servers) ? $servers : [];
+    }
+
+    /**
+     * Get the OAuth resource metadata path.
+     */
+    public function getResourceMetadataPath(): string
+    {
+        return (string)($this->options['resource_metadata_path'] ?? '/.well-known/oauth-protected-resource');
+    }
+
+    /**
+     * Get the token validator instance if configured.
+     */
+    public function getTokenValidator()
+    {
+        return $this->options['token_validator'] ?? null;
     }
     
     /**
