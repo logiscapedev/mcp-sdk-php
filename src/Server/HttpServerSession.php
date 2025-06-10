@@ -39,64 +39,6 @@ use Mcp\Types\InitializeRequestParams;
 
 class HttpServerSession extends ServerSession
 {
-    /**
-     * OAuth token metadata for the current request.
-     *
-     * @var array|null
-     */
-    private ?array $oauthToken = null;
-
-    /**
-     * Set OAuth token metadata for this session.
-     *
-     * @param array $tokenMetadata OAuth token metadata
-     * @return void
-     */
-    public function setOAuthToken(array $tokenMetadata): void
-    {
-        $this->oauthToken = $tokenMetadata;
-    }
-    
-    /**
-     * Get OAuth token metadata.
-     *
-     * @return array|null
-     */
-    public function getOAuthToken(): ?array
-    {
-        return $this->oauthToken;
-    }
-    
-    /**
-     * Get the client ID from OAuth token.
-     *
-     * @return string|null
-     */
-    public function getOAuthClientId(): ?string
-    {
-        return $this->oauthToken['client_id'] ?? null;
-    }
-    
-    /**
-     * Get the user ID from OAuth token.
-     *
-     * @return string|null
-     */
-    public function getOAuthUserId(): ?string
-    {
-        return $this->oauthToken['user_id'] ?? null;
-    }
-    
-    /**
-     * Get the granted scope from OAuth token.
-     *
-     * @return string|null
-     */
-    public function getOAuthScope(): ?string
-    {
-        return $this->oauthToken['scope'] ?? null;
-    }
-
     protected function startMessageProcessing(): void
     {
         $this->isInitialized = true;
@@ -139,7 +81,6 @@ class HttpServerSession extends ServerSession
                 : null,
             
             'negotiatedProtocolVersion' => $this->negotiatedProtocolVersion,
-            'oauthToken' => $this->oauthToken,
         ];
     }
 
@@ -190,10 +131,6 @@ class HttpServerSession extends ServerSession
 
         $session->negotiatedProtocolVersion =
             $data['negotiatedProtocolVersion'] ?? $session->negotiatedProtocolVersion;
-        
-        if (isset($data['oauthToken']) && is_array($data['oauthToken'])) {
-            $session->setOAuthToken($data['oauthToken']);
-        }
 
         return $session;
     }
