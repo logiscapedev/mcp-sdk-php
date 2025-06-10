@@ -43,6 +43,7 @@ use Mcp\Server\Transport\Http\HttpSession;
 use Mcp\Server\Transport\Http\InMemorySessionStore;
 use Mcp\Server\Transport\Http\MessageQueue;
 use Mcp\Server\Transport\Http\SessionStoreInterface;
+use Mcp\Server\Auth\TokenValidatorInterface;
 
 /**
  * HTTP transport implementation for MCP server.
@@ -114,15 +115,21 @@ class HttpServerTransport implements Transport
      * @var HttpSession|null
      */
     private ?HttpSession $lastUsedSession = null;
+
+    /**
+     * Token validator for OAuth access tokens.
+     */
+    private ?TokenValidatorInterface $validator = null;
     
     /**
      * Constructor.
      *
      * @param array $options Configuration options
      */
-    public function __construct(array $options = [], ?SessionStoreInterface $sessionStore = null)
+    public function __construct(array $options = [], ?SessionStoreInterface $sessionStore = null, ?TokenValidatorInterface $validator = null)
     {
         $this->config = new Config($options);
+        $this->validator = $validator ?? $this->config->getTokenValidator();
         $this->messageQueue = new MessageQueue(
             $this->config->get('max_queue_size')
         );
@@ -231,6 +238,13 @@ class HttpServerTransport implements Transport
      */
     public function handleRequest(HttpMessage $request): HttpMessage
     {
+        $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
+        if ($request->getMethod() === 'GET' && $path === $this->config->getResourceMetadataPath()) {
+            return HttpMessage::createJsonResponse([
+                'authorization_servers' => $this->config->getAuthorizationServers(),
+            ]);
+        }
+
         // Extract session ID from request headers
         $sessionId = $request->getHeader('Mcp-Session-Id');
         $session = null;
@@ -271,6 +285,31 @@ class HttpServerTransport implements Transport
 
         // Set last used session
         $this->lastUsedSession = $session;
+
+        // Authorization handling
+        if ($this->config->isAuthEnabled()) {
+            $authHeader = $request->getHeader('Authorization');
+            if ($authHeader === null || !preg_match('/^Bearer\s+(\S+)/i', $authHeader, $m)) {
+                return HttpMessage::createEmptyResponse(401)
+                    ->setHeader('WWW-Authenticate', 'Bearer realm="" resource="' . $this->config->getResourceMetadataPath() . '"');
+            }
+
+            if ($this->validator === null) {
+                return HttpMessage::createJsonResponse(['error' => 'No token validator configured'], 500);
+            }
+
+            $result = $this->validator->validate($m[1]);
+            if (!$result->valid) {
+                return HttpMessage::createEmptyResponse(401)
+                    ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource="' . $this->config->getResourceMetadataPath() . '"');
+            }
+
+            if (!isset($result->claims['scope']) || strpos((string)$result->claims['scope'], 'mcp') === false) {
+                return HttpMessage::createEmptyResponse(403);
+            }
+
+            $session->setMetadata('token_claims', $result->claims);
+        }
         
         // Process request based on HTTP method
         $response = match (strtoupper($request->getMethod())) {
@@ -376,9 +415,16 @@ class HttpServerTransport implements Transport
      */
     private function handleGetRequest(HttpMessage $request, HttpSession $session): HttpMessage
     {
+        $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
+        if ($path === $this->config->getResourceMetadataPath()) {
+            return HttpMessage::createJsonResponse([
+                'authorization_servers' => $this->config->getAuthorizationServers(),
+            ]);
+        }
+
         // Check if SSE is supported and requested
         $acceptHeader = $request->getHeader('Accept');
-        $wantsSse = $acceptHeader !== null && 
+        $wantsSse = $acceptHeader !== null &&
                    stripos($acceptHeader, 'text/event-stream') !== false;
         
         if ($wantsSse && $this->config->isSseEnabled() && Environment::canSupportSse()) {
@@ -904,6 +950,22 @@ class HttpServerTransport implements Transport
     public function getConfig(): Config
     {
         return $this->config;
+    }
+
+    /**
+     * Set a token validator.
+     */
+    public function setTokenValidator(TokenValidatorInterface $validator): void
+    {
+        $this->validator = $validator;
+    }
+
+    /**
+     * Get the token validator if configured.
+     */
+    public function getTokenValidator(): ?TokenValidatorInterface
+    {
+        return $this->validator;
     }
 
     /**
