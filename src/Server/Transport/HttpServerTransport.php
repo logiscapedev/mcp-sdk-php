@@ -240,9 +240,7 @@ class HttpServerTransport implements Transport
     {
         $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
         if ($request->getMethod() === 'GET' && $path === $this->config->getResourceMetadataPath()) {
-            return HttpMessage::createJsonResponse([
-                'authorization_servers' => $this->config->getAuthorizationServers(),
-            ]);
+            return HttpMessage::createJsonResponse($this->getProtectedResourceMetadata());
         }
 
         // Extract session ID from request headers
@@ -291,7 +289,7 @@ class HttpServerTransport implements Transport
             $authHeader = $request->getHeader('Authorization');
             if ($authHeader === null || !preg_match('/^Bearer\s+(\S+)/i', $authHeader, $m)) {
                 return HttpMessage::createEmptyResponse(401)
-                    ->setHeader('WWW-Authenticate', 'Bearer realm="" resource="' . $this->config->getResourceMetadataPath() . '"');
+                    ->setHeader('WWW-Authenticate', 'Bearer resource="' . $this->config->getResourceMetadataPath() . '"');
             }
 
             if ($this->validator === null) {
@@ -339,6 +337,10 @@ class HttpServerTransport implements Transport
      */
     private function handlePostRequest(HttpMessage $request, HttpSession $session): HttpMessage
     {
+        if ($this->config->isAuthEnabled() && $session->getMetadata('token_claims') === null) {
+            return HttpMessage::createEmptyResponse(401)
+                ->setHeader('WWW-Authenticate', 'Bearer resource="' . $this->config->getResourceMetadataPath() . '"');
+        }
         // Get and validate content type
         $contentType = $request->getHeader('Content-Type');
         if ($contentType === null || stripos($contentType, 'application/json') === false) {
@@ -417,9 +419,7 @@ class HttpServerTransport implements Transport
     {
         $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
         if ($path === $this->config->getResourceMetadataPath()) {
-            return HttpMessage::createJsonResponse([
-                'authorization_servers' => $this->config->getAuthorizationServers(),
-            ]);
+            return HttpMessage::createJsonResponse($this->getProtectedResourceMetadata());
         }
 
         // Check if SSE is supported and requested
@@ -771,6 +771,26 @@ class HttpServerTransport implements Transport
         }
         
         return HttpMessage::createJsonResponse($batchData, 200);
+    }
+
+    /**
+     * Generate OAuth protected resource metadata for this server.
+     */
+    private function getProtectedResourceMetadata(): array
+    {
+        $metadata = [];
+
+        $resource = $this->config->getResource();
+        if ($resource !== null) {
+            $metadata['resource'] = $resource;
+        }
+
+        $servers = $this->config->getAuthorizationServers();
+        if (!empty($servers)) {
+            $metadata['authorization_servers'] = $servers;
+        }
+
+        return $metadata;
     }
     
     /**
