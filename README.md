@@ -229,7 +229,12 @@ $transport = new HttpServerTransport([
     'auth_enabled' => true,
     'authorization_servers' => ['https://auth.example.com'],
     'resource' => 'https://example.com/api',
-    'token_validator' => new Mcp\Server\Auth\JwtTokenValidator('shared-secret')
+    'token_validator' => new Mcp\Server\Auth\JwtTokenValidator(
+        'shared-secret',
+        'HS256',
+        'https://auth.example.com',
+        'https://example.com/api'
+    )
 ]);
 ```
 

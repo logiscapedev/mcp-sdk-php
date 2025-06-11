@@ -11,13 +11,16 @@ declare(strict_types=1);
 namespace Mcp\Server\Auth;
 
 /**
- * Basic JWT validator supporting HS256 and RS256 algorithms.
+ * Basic JWT validator supporting HS256 and RS256 algorithms with optional
+ * claim verification.
  */
 class JwtTokenValidator implements TokenValidatorInterface
 {
     public function __construct(
         private readonly string $key,
-        private readonly string $algorithm = 'HS256'
+        private readonly string $algorithm = 'HS256',
+        private readonly ?string $issuer = null,
+        private readonly ?string $audience = null,
     ) {
     }
 
@@ -49,7 +52,42 @@ class JwtTokenValidator implements TokenValidatorInterface
             return new TokenValidationResult(false, [], 'Unsupported algorithm');
         }
 
-        return new TokenValidationResult($valid, $valid ? $payload : [], $valid ? null : 'Signature verification failed');
+        if (!$valid) {
+            return new TokenValidationResult(false, [], 'Signature verification failed');
+        }
+
+        $now = time();
+
+        if (isset($payload['exp']) && $now >= (int) $payload['exp']) {
+            return new TokenValidationResult(false, [], 'Token expired');
+        }
+
+        if (isset($payload['nbf']) && $now < (int) $payload['nbf']) {
+            return new TokenValidationResult(false, [], 'Token not yet valid');
+        }
+
+        if (isset($payload['iat']) && $now < (int) $payload['iat']) {
+            return new TokenValidationResult(false, [], 'Token issued in the future');
+        }
+
+        if ($this->issuer !== null && ($payload['iss'] ?? null) !== $this->issuer) {
+            return new TokenValidationResult(false, [], 'Invalid issuer');
+        }
+
+        if ($this->audience !== null) {
+            $aud = $payload['aud'] ?? null;
+            $audValid = false;
+            if (is_string($aud)) {
+                $audValid = $aud === $this->audience;
+            } elseif (is_array($aud)) {
+                $audValid = in_array($this->audience, $aud, true);
+            }
+            if (!$audValid) {
+                return new TokenValidationResult(false, [], 'Invalid audience');
+            }
+        }
+
+        return new TokenValidationResult(true, $payload);
     }
 
     private function base64UrlDecode(string $input): string
