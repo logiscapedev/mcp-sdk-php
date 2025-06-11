@@ -26,6 +26,8 @@ declare(strict_types=1);
 
 namespace Mcp\Server\Transport\Http;
 
+use Mcp\Server\Auth\TokenValidatorInterface;
+
 /**
  * Configuration management for HTTP transport.
  * 
@@ -63,6 +65,11 @@ class Config
      */
     public function __construct(array $customOptions = [])
     {
+        // Validate auth configuration if enabled
+        if (isset($customOptions['auth_enabled']) && $customOptions['auth_enabled']) {
+            $this->validateAuthConfig($customOptions);
+        }
+
         if (isset($customOptions['auto_detect']) && $customOptions['auto_detect'] === true) {
             $this->autoDetectOptions();
         } elseif (!isset($customOptions['auto_detect']) && $this->options['auto_detect']) {
@@ -73,6 +80,40 @@ class Config
         $this->options = array_merge($this->options, $customOptions);
     }
     
+    /**
+     * Validate OAuth configuration
+     * 
+     * @param array $options Configuration options
+     * @return void
+     * @throws \InvalidArgumentException If configuration is invalid
+     */
+    private function validateAuthConfig(array $options): void
+    {
+        if (!isset($options['resource']) || empty($options['resource'])) {
+            throw new \InvalidArgumentException(
+                'resource identifier is required when auth_enabled is true'
+            );
+        }
+        
+        if (!isset($options['authorization_servers']) || empty($options['authorization_servers'])) {
+            throw new \InvalidArgumentException(
+                'authorization_servers array is required when auth_enabled is true'
+            );
+        }
+        
+        if (!isset($options['token_validator'])) {
+            throw new \InvalidArgumentException(
+                'token_validator is required when auth_enabled is true'
+            );
+        }
+        
+        if (!$options['token_validator'] instanceof TokenValidatorInterface) {
+            throw new \InvalidArgumentException(
+                'token_validator must implement TokenValidatorInterface'
+            );
+        }
+    }
+
     /**
      * Get a configuration option.
      *
@@ -145,7 +186,7 @@ class Config
     /**
      * Get the token validator instance if configured.
      */
-    public function getTokenValidator()
+    public function getTokenValidator(): ?TokenValidatorInterface
     {
         return $this->options['token_validator'] ?? null;
     }

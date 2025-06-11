@@ -220,7 +220,7 @@ This MCP Web Client is intended for developers to test MCP servers, and it is no
 
 While MCP is usually implemented as a stateful session protocol, a typical PHP-based web hosting environment restricts long-running processes. To maximize compatibility, the MCP Web Client will initialize a new connection between the client and server for every request, and then close that connection after the request is complete.
 
-## OAuth Authorization
+## OAuth Authorization (Currently In Testing)
 
 The HTTP server transport includes optional OAuth 2.1 support. Enable it by passing the following options when constructing `HttpServerTransport`:
 
@@ -228,19 +228,17 @@ The HTTP server transport includes optional OAuth 2.1 support. Enable it by pass
 $transport = new HttpServerTransport([
     'auth_enabled' => true,
     'authorization_servers' => ['https://auth.example.com'],
-    'resource' => 'https://example.com/api',
+    'resource' => 'https://example.com/mcp-server',
     'token_validator' => new Mcp\Server\Auth\JwtTokenValidator(
-        'shared-secret',
-        'HS256',
-        'https://auth.example.com',
-        'https://example.com/api'
+        key: 'your-secret-key',
+        algorithm: 'HS256',
+        issuer: 'https://auth.example.com',
+        audience: 'https://example.com/mcp-server'
     )
 ]);
 ```
 
-When enabled, requests must include a `Bearer` access token in the `Authorization` header. Invalid or missing tokens receive a `401` response with a `WWW-Authenticate` header pointing to `/.well-known/oauth-protected-resource`.
-The metadata at this path describes the protected resource using the `resource` and `authorization_servers` options.
-Clients can retrieve it with a simple `GET` request to the path configured by `resource_metadata_path`.
+This implementation follows the current MCP Protocol draft, which states "A protected MCP server acts as an OAuth 2.1 resource server". The actual authorization servers are beyond the scope of the MCP protocol.
 
 ## Documentation
 
@@ -256,8 +254,11 @@ We are currently implementing the 2025-03-26 revision of the MCP Spec.
 - Add support for JSON-RPC batching
 - Implement HTTP transport
 
+### In Progress
+- Implement server side authorization framework based on OAuth 2.1
+
 ### To Do
-- Implement authorization framework based on OAuth 2.1
+- Implement client side authorization framework based on OAuth 2.1
 - Explore the feasibility of supporting SSE in PHP environments
 
 ## Credits
