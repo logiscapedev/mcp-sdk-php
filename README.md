@@ -12,7 +12,7 @@ This PHP SDK implements the full MCP specification, making it easy to:
 * Use standard transports like stdio and HTTP
 * Handle all MCP protocol messages and lifecycle events
 
-Based on the official [Python SDK](https://github.com/modelcontextprotocol/python-sdk) for the Model Context Protocol.
+This SDK began as a PHP port of the official [Python SDK](https://github.com/modelcontextprotocol/python-sdk) for the Model Context Protocol. It has since been expanded to fully support MCP using native PHP functions, helping to maximize compatibility with most standard web hosting environments.
 
 This SDK is primarily targeted at developers working on frontier AI integration solutions. Some functionality may be incomplete and implementations should undergo thorough testing and security review by experienced developers prior to production use.
 
@@ -222,23 +222,7 @@ While MCP is usually implemented as a stateful session protocol, a typical PHP-b
 
 ## OAuth Authorization (Currently In Testing)
 
-The HTTP server transport includes optional OAuth 2.1 support. Enable it by passing the following options when constructing `HttpServerTransport`:
-
-```php
-$transport = new HttpServerTransport([
-    'auth_enabled' => true,
-    'authorization_servers' => ['https://auth.example.com'],
-    'resource' => 'https://example.com/mcp-server',
-    'token_validator' => new Mcp\Server\Auth\JwtTokenValidator(
-        key: 'your-secret-key',
-        algorithm: 'HS256',
-        issuer: 'https://auth.example.com',
-        audience: 'https://example.com/mcp-server'
-    )
-]);
-```
-
-This implementation follows the current MCP Protocol draft, which states "A protected MCP server acts as an OAuth 2.1 resource server". The actual authorization servers are beyond the scope of the MCP protocol.
+The HTTP server transport includes optional OAuth 2.1 support. For more details see the [OAuth Authentication Example](examples/server_auth/README.md).
 
 ## Documentation
 
@@ -265,9 +249,10 @@ We are currently implementing the 2025-03-26 revision of the MCP Spec.
 
 This PHP SDK was developed by:
 - [Josh Abbott](https://joshabbott.com)
-- Claude 3.5 Sonnet (Anthropic AI model)
+- Claude 3.5 Sonnet
+- Claude Opus 4
 
-Additional debugging and refactoring done by Josh Abbott using OpenAI ChatGPT o1 pro mode.
+Additional debugging and refactoring done by Josh Abbott using OpenAI ChatGPT o1 pro mode and OpenAI Codex.
 
 Based on the original [Python SDK](https://github.com/modelcontextprotocol/python-sdk) for the Model Context Protocol.
 
