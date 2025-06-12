@@ -194,7 +194,7 @@ php example_client.php
 
 ## Advanced Examples
 
-The "examples" directory includes addtional clients and servers for both the STDIO and HTTP transports. All examples are designed to run in the same directory where you installed the SDK.
+The "examples" directory includes additional clients and servers for both the STDIO and HTTP transports. All examples are designed to run in the same directory where you installed the SDK.
 
 Some examples use monolog for logging, which can be installed via composer:
 
@@ -238,7 +238,7 @@ We are currently implementing the 2025-03-26 revision of the MCP Spec.
 - Add support for JSON-RPC batching
 - Implement HTTP transport
 
-### In Progress
+### Available For Testing
 - Implement server side authorization framework based on OAuth 2.1
 
 ### To Do

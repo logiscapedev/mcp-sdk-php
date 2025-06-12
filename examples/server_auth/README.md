@@ -10,10 +10,10 @@ The MCP SDK for PHP supports OAuth 2.1 authentication, allowing you to protect y
 
 ### 1. Install the MCP SDK
 
-First, install the MCP SDK using Composer. Auth support is currently in testing in the dev branch:
+First, install the MCP SDK using Composer:
 
 ```bash
-composer require logiscape/mcp-sdk-php:dev-main
+composer require logiscape/mcp-sdk-php
 ```
 
 This will create a `vendor` directory containing all necessary dependencies.
