@@ -88,9 +88,14 @@ class HttpServerRunner extends ServerRunner
         // 1) Let the transport parse the HTTP request and enqueue messages
         $transportResponse = $this->transport->handleRequest($request);
 
-        // Return any errors immediately
+        // If transport returned an error response OR a direct response (like metadata), return it immediately
         $statusCode = $transportResponse->getStatusCode();
-        if ($statusCode !== 200 && $statusCode !== 202 && $statusCode !== 204) {
+        $responseBody = $transportResponse->getBody();
+
+        // If we got a response with content (like metadata) or an error, return it
+        if (($statusCode === 200 && $responseBody !== null && $responseBody !== '') || 
+            ($statusCode !== 200 && $statusCode !== 202 && $statusCode !== 204)) {
+            // Transport returned a direct response (metadata, error, etc) - return it as-is
             return $transportResponse;
         }
 
