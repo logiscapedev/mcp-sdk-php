@@ -86,7 +86,13 @@ class HttpServerRunner extends ServerRunner
     public function handleRequest(?HttpMessage $request = null): HttpMessage
     {
         // 1) Let the transport parse the HTTP request and enqueue messages
-        $this->transport->handleRequest($request);
+        $transportResponse = $this->transport->handleRequest($request);
+
+        // Return any errors immediately
+        $statusCode = $transportResponse->getStatusCode();
+        if ($statusCode !== 200 && $statusCode !== 202 && $statusCode !== 204) {
+            return $transportResponse;
+        }
 
         // 2) Restore the session if one exists or create a new one
         $httpSession = $this->transport->getLastUsedSession();
