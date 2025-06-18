@@ -101,18 +101,7 @@ Your authenticated MCP server will:
 
 Test the authentication flow:
 
-```bash
-# Test without authentication (should return 401)
-curl -X POST https://yoursite.com/server_auth.php \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
-
-# Test with token (should succeed)
-curl -X POST https://yoursite.com/server_auth.php \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
-```
+The included file test-client.html features a basic MCP server test tool. Connecting to server_auth.php without a Bearer Token should allow you to fetch the resource metadata, but an Initialize Request should fail with a 401 error. Connecting with a valid Bearer Token should allow you to initialize a session, and then fetch the list of available tools.
 
 ## Production Deployment
 
