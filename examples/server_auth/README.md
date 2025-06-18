@@ -59,7 +59,7 @@ RewriteCond %{HTTP:Authorization} ^(.*)
 RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
 
 # 2. Route .well-known endpoint to your MCP server
-RewriteRule ^\.well-known/oauth-protected-resource$ /server_auth.php [L]
+RewriteRule ^\.well-known/oauth-protected-resource(/.*)?$ /server_auth.php [L]
 ```
 
 **Why This Is Necessary:**

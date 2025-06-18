@@ -51,7 +51,8 @@ use Mcp\Types\TextResourceContents;
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $allowedPaths = [
     '/server_auth.php',
-    '/.well-known/oauth-protected-resource'
+    '/.well-known/oauth-protected-resource',
+    '/.well-known/oauth-protected-resource/server_auth.php'
 ];
 
 if (!in_array($requestUri, $allowedPaths)) {
@@ -71,7 +72,7 @@ error_reporting(E_ALL);
 
 // Check HTTP method - allow GET for metadata endpoint
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$isMetadataEndpoint = ($requestUri === '/.well-known/oauth-protected-resource');
+$isMetadataEndpoint = (stripos($requestUri, '/.well-known/oauth-protected-resource') !== false);
 
 if ($isMetadataEndpoint && $method !== 'GET') {
     http_response_code(405);

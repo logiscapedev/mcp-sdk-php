@@ -239,7 +239,7 @@ class HttpServerTransport implements Transport
     public function handleRequest(HttpMessage $request): HttpMessage
     {
         $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
-        if ($request->getMethod() === 'GET' && $path === $this->config->getResourceMetadataPath()) {
+        if ($request->getMethod() === 'GET' && stripos($path, $this->config->getResourceMetadataPath()) !== false) {
             return HttpMessage::createJsonResponse($this->getProtectedResourceMetadata());
         }
 
@@ -396,7 +396,7 @@ class HttpServerTransport implements Transport
             return $auth;
         }
         $path = parse_url($request->getUri() ?? '/', PHP_URL_PATH);
-        if ($path === $this->config->getResourceMetadataPath()) {
+        if (stripos($path, $this->config->getResourceMetadataPath()) !== false) {
             return HttpMessage::createJsonResponse($this->getProtectedResourceMetadata());
         }
 
@@ -892,7 +892,7 @@ class HttpServerTransport implements Transport
         if ($authHeader === null || !preg_match('/^Bearer\s+(\S+)/i', $authHeader, $m)) {
             $url = $this->getResourceMetadataUrl($request);
             return HttpMessage::createEmptyResponse(401)
-                ->setHeader('WWW-Authenticate', 'Bearer resource="' . $url . '"');
+                ->setHeader('WWW-Authenticate', 'Bearer resource_metadata="' . $url . '"');
         }
 
         $validator = $this->validator ?? $this->config->getTokenValidator();
@@ -904,7 +904,7 @@ class HttpServerTransport implements Transport
         if (!$result->valid) {
             $url = $this->getResourceMetadataUrl($request);
             return HttpMessage::createEmptyResponse(401)
-                ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource="' . $url . '"');
+                ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource_metadata="' . $url . '"');
         }
 
         if (!isset($result->claims['scope']) || strpos((string)$result->claims['scope'], 'mcp') === false) {
