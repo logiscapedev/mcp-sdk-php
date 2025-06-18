@@ -773,6 +773,38 @@ class HttpServerTransport implements Transport
 
         return $metadata;
     }
+
+    /**
+     * Build the full URL to the OAuth protected resource metadata endpoint.
+     *
+     * @param HttpMessage $request Current HTTP request
+     */
+    private function getResourceMetadataUrl(HttpMessage $request): string
+    {
+        $path = $this->config->getResourceMetadataPath();
+
+        // Determine scheme from forwarded headers or HTTPS flag
+        $scheme = 'http';
+        $proto = $request->getHeader('x-forwarded-proto')
+            ?? $request->getHeader('X-Forwarded-Proto');
+        if ($proto !== null) {
+            $scheme = strtolower(trim(explode(',', $proto)[0]));
+        } elseif (($request->getHeader('HTTPS') ?? $_SERVER['HTTPS'] ?? 'off') !== 'off') {
+            $scheme = 'https';
+        }
+
+        // Determine host either from header or configured host/port
+        $host = $request->getHeader('host');
+        if ($host === null) {
+            $host = $this->config->get('host');
+            $port = (int)($this->config->get('port') ?? 80);
+            if (($scheme === 'http' && $port !== 80) || ($scheme === 'https' && $port !== 443)) {
+                $host .= ':' . $port;
+            }
+        }
+
+        return $scheme . '://' . rtrim($host, '/') . $path;
+    }
     
     /**
      * Get a session by ID.
@@ -858,8 +890,9 @@ class HttpServerTransport implements Transport
 
         $authHeader = $request->getHeader('Authorization');
         if ($authHeader === null || !preg_match('/^Bearer\s+(\S+)/i', $authHeader, $m)) {
+            $url = $this->getResourceMetadataUrl($request);
             return HttpMessage::createEmptyResponse(401)
-                ->setHeader('WWW-Authenticate', 'Bearer resource="' . $this->config->getResourceMetadataPath() . '"');
+                ->setHeader('WWW-Authenticate', 'Bearer resource="' . $url . '"');
         }
 
         $validator = $this->validator ?? $this->config->getTokenValidator();
@@ -869,8 +902,9 @@ class HttpServerTransport implements Transport
 
         $result = $validator->validate($m[1]);
         if (!$result->valid) {
+            $url = $this->getResourceMetadataUrl($request);
             return HttpMessage::createEmptyResponse(401)
-                ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource="' . $this->config->getResourceMetadataPath() . '"');
+                ->setHeader('WWW-Authenticate', 'Bearer error="invalid_token" resource="' . $url . '"');
         }
 
         if (!isset($result->claims['scope']) || strpos((string)$result->claims['scope'], 'mcp') === false) {
